@@ -97,6 +97,8 @@ def run(
         timeout=fetch_config["request_timeout_seconds"],
         delay_seconds=fetch_config["request_delay_seconds"],
         max_retries=fetch_config["max_retries"],
+        rate_limit_backoff_seconds=fetch_config["rate_limit_backoff_seconds"],
+        rate_limit_max_backoff_seconds=fetch_config["rate_limit_max_backoff_seconds"],
     )
 
     candidates: dict[str, Paper] = {}

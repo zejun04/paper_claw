@@ -14,7 +14,9 @@ DEFAULTS: dict[str, Any] = {
         "preselect_limit": 15,
         "request_delay_seconds": 3,
         "request_timeout_seconds": 45,
-        "max_retries": 3,
+        "max_retries": 5,
+        "rate_limit_backoff_seconds": 60,
+        "rate_limit_max_backoff_seconds": 300,
     },
     "analysis": {
         "language": "zh-CN",

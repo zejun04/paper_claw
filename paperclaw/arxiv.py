@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import re
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from typing import Callable
 
 from .models import Paper
@@ -101,6 +103,8 @@ class ArxivClient:
         timeout: int = 45,
         delay_seconds: float = 3,
         max_retries: int = 3,
+        rate_limit_backoff_seconds: float = 60,
+        rate_limit_max_backoff_seconds: float = 300,
         http_get: Callable[[str, int], bytes] | None = None,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
@@ -108,6 +112,8 @@ class ArxivClient:
         self.timeout = timeout
         self.delay_seconds = delay_seconds
         self.max_retries = max_retries
+        self.rate_limit_backoff_seconds = rate_limit_backoff_seconds
+        self.rate_limit_max_backoff_seconds = rate_limit_max_backoff_seconds
         self.http_get = http_get or self._default_http_get
         self.sleep = sleep
 
@@ -125,11 +131,44 @@ class ArxivClient:
         for attempt in range(self.max_retries):
             try:
                 return self.http_get(url, self.timeout)
+            except urllib.error.HTTPError as exc:
+                last_error = exc
+                if exc.code == 429:
+                    wait_seconds = self._rate_limit_wait(exc, attempt)
+                elif 500 <= exc.code < 600:
+                    wait_seconds = self.delay_seconds * (attempt + 1)
+                else:
+                    raise RuntimeError(f"arXiv API 请求失败: HTTP {exc.code}: {exc.reason}") from exc
+                if attempt + 1 < self.max_retries:
+                    self.sleep(wait_seconds)
             except Exception as exc:
                 last_error = exc
                 if attempt + 1 < self.max_retries:
                     self.sleep(self.delay_seconds * (attempt + 1))
+        if isinstance(last_error, urllib.error.HTTPError) and last_error.code == 429:
+            raise RuntimeError(
+                f"arXiv API 请求失败: HTTP 429，已重试 {self.max_retries - 1} 次；"
+                "请稍后再运行，或减少查询频率"
+            ) from last_error
         raise RuntimeError(f"arXiv API 请求失败: {last_error}") from last_error
+
+    def _rate_limit_wait(self, error: urllib.error.HTTPError, attempt: int) -> float:
+        retry_after = error.headers.get("Retry-After") if error.headers else None
+        if retry_after:
+            try:
+                return max(1.0, float(retry_after))
+            except ValueError:
+                try:
+                    retry_at = parsedate_to_datetime(retry_after)
+                    if retry_at.tzinfo is None:
+                        retry_at = retry_at.replace(tzinfo=timezone.utc)
+                    return max(1.0, (retry_at - datetime.now(timezone.utc)).total_seconds())
+                except (TypeError, ValueError, OverflowError):
+                    pass
+        return min(
+            self.rate_limit_max_backoff_seconds,
+            self.rate_limit_backoff_seconds * (2**attempt),
+        )
 
     def search(
         self,
@@ -160,6 +199,8 @@ class ArxivClient:
                 self.sleep(self.delay_seconds)
                 break
             start += len(page)
+            self.sleep(self.delay_seconds)
+        else:
             self.sleep(self.delay_seconds)
         unique: dict[str, Paper] = {}
         for paper in papers:

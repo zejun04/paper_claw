@@ -1,5 +1,6 @@
 import unittest
 from datetime import timezone
+from urllib.error import HTTPError
 
 from paperclaw.arxiv import ArxivClient, build_query, canonical_id, parse_feed
 
@@ -60,6 +61,33 @@ class ArxivTests(unittest.TestCase):
         papers = client.search(["quadruped"], ["cs.RO"], 1, 2)
         self.assertEqual(len(papers), 1)
         self.assertGreaterEqual(len(calls), 2)
+
+    def test_rate_limit_honors_retry_after(self):
+        calls = []
+        sleeps = []
+        responses = [
+            HTTPError("https://example.test/api", 429, "Too Many Requests", {"Retry-After": "7"}, None),
+            FEED,
+        ]
+
+        def http_get(url, timeout):
+            calls.append(url)
+            value = responses.pop(0)
+            if isinstance(value, Exception):
+                raise value
+            return value
+
+        client = ArxivClient(
+            "https://example.test/api",
+            max_retries=2,
+            rate_limit_backoff_seconds=60,
+            http_get=http_get,
+            sleep=sleeps.append,
+        )
+        papers = client.search(["quadruped"], ["cs.RO"], 1, 2)
+        self.assertEqual(len(papers), 1)
+        self.assertEqual(sleeps[0], 7.0)
+        self.assertEqual(len(calls), 2)
 
 
 if __name__ == "__main__":
