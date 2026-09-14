@@ -1,0 +1,52 @@
+fetch:
+  max_per_category: 5
+  initial_lookback_days: 30
+  daily_lookback_days: 3
+  candidate_limit: 40
+  preselect_limit: 15
+  request_delay_seconds: 3
+  request_timeout_seconds: 45
+  max_retries: 3
+
+analysis:
+  language: zh-CN
+  relevance_threshold: 0.65
+  max_pdf_characters: 90000
+  max_analysis_characters: 50000
+
+arxiv:
+  api_url: https://export.arxiv.org/api/query
+  subject_categories:
+    - cs.RO
+    - cs.LG
+    - eess.SY
+    - cs.CV
+
+categories:
+  Quard-robot:
+    description: 四足、足式和四腿机器人
+    keywords:
+      - quadruped
+      - quadrupedal robot
+      - four-legged robot
+      - legged robot
+      - legged locomotion
+      - quadruped locomotion
+  humanoid:
+    description: 人形和双足机器人
+    keywords:
+      - humanoid robot
+      - humanoid
+      - bipedal robot
+      - bipedal locomotion
+      - whole-body control
+  pick:
+    description: 机械臂操作、抓取和拾取放置
+    keywords:
+      - robotic arm
+      - robot arm
+      - robotic manipulation
+      - manipulation
+      - grasping
+      - pick-and-place
+      - mobile manipulation

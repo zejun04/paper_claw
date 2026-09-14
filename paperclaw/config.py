@@ -1,0 +1,92 @@
+from __future__ import annotations
+
+from copy import deepcopy
+from pathlib import Path
+from typing import Any
+
+
+DEFAULTS: dict[str, Any] = {
+    "fetch": {
+        "max_per_category": 5,
+        "initial_lookback_days": 30,
+        "daily_lookback_days": 3,
+        "candidate_limit": 40,
+        "preselect_limit": 15,
+        "request_delay_seconds": 3,
+        "request_timeout_seconds": 45,
+        "max_retries": 3,
+    },
+    "analysis": {
+        "language": "zh-CN",
+        "relevance_threshold": 0.65,
+        "max_pdf_characters": 90000,
+        "max_analysis_characters": 50000,
+    },
+    "categories": {
+        "Quard-robot": {
+            "description": "四足、足式和四腿机器人",
+            "keywords": [
+                "quadruped",
+                "quadrupedal robot",
+                "four-legged robot",
+                "legged robot",
+                "legged locomotion",
+                "quadruped locomotion",
+            ],
+        },
+        "humanoid": {
+            "description": "人形和双足机器人",
+            "keywords": [
+                "humanoid robot",
+                "humanoid",
+                "bipedal robot",
+                "bipedal locomotion",
+                "whole-body control",
+            ],
+        },
+        "pick": {
+            "description": "机械臂操作、抓取和拾取放置",
+            "keywords": [
+                "robotic arm",
+                "robot arm",
+                "robotic manipulation",
+                "manipulation",
+                "grasping",
+                "pick-and-place",
+                "mobile manipulation",
+            ],
+        },
+    },
+    "arxiv": {
+        "api_url": "https://export.arxiv.org/api/query",
+        "subject_categories": ["cs.RO", "cs.LG", "eess.SY", "cs.CV"],
+    },
+}
+
+
+def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    result = deepcopy(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def load_config(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return deepcopy(DEFAULTS)
+
+    try:
+        import yaml
+    except ImportError as exc:
+        raise RuntimeError(
+            "缺少 PyYAML，请先运行: python -m pip install -r requirements.txt"
+        ) from exc
+
+    with path.open("r", encoding="utf-8") as handle:
+        loaded = yaml.safe_load(handle) or {}
+    if not isinstance(loaded, dict):
+        raise ValueError(f"配置文件必须是 YAML 对象: {path}")
+    return _merge(DEFAULTS, loaded)
