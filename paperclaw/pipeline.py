@@ -99,6 +99,7 @@ def run(
         max_retries=fetch_config["max_retries"],
         rate_limit_backoff_seconds=fetch_config["rate_limit_backoff_seconds"],
         rate_limit_max_backoff_seconds=fetch_config["rate_limit_max_backoff_seconds"],
+        request_method=config["arxiv"].get("request_method", "get"),
     )
 
     candidates: dict[str, Paper] = {}

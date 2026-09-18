@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import os
 import time
 import urllib.error
 import urllib.parse
@@ -105,6 +106,7 @@ class ArxivClient:
         max_retries: int = 3,
         rate_limit_backoff_seconds: float = 60,
         rate_limit_max_backoff_seconds: float = 300,
+        request_method: str = "get",
         http_get: Callable[[str, int], bytes] | None = None,
         http_post: Callable[[str, int], bytes] | None = None,
         sleep: Callable[[float], None] = time.sleep,
@@ -115,6 +117,9 @@ class ArxivClient:
         self.max_retries = max_retries
         self.rate_limit_backoff_seconds = rate_limit_backoff_seconds
         self.rate_limit_max_backoff_seconds = rate_limit_max_backoff_seconds
+        self.request_method = request_method.lower()
+        if self.request_method not in {"get", "post"}:
+            raise ValueError("request_method must be 'get' or 'post'")
         self.http_get = http_get or self._default_http_get
         self.http_post = http_post or self._default_http_post
         self.sleep = sleep
@@ -125,10 +130,10 @@ class ArxivClient:
             url,
             headers={
                 "User-Agent": "paper-claw/0.1 (+https://github.com/zejun04/paper_claw)",
-                "Accept": "application/atom+xml",
+                "Accept": "application/atom+xml, application/xml;q=0.9, */*;q=0.8",
             },
         )
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with ArxivClient._open_url(request, timeout) as response:
             return response.read()
 
     @staticmethod
@@ -142,22 +147,30 @@ class ArxivClient:
             data=parsed.query.encode("ascii"),
             headers={
                 "User-Agent": "paper-claw/0.1 (+https://github.com/zejun04/paper_claw)",
-                "Accept": "application/atom+xml",
+                "Accept": "application/atom+xml, application/xml;q=0.9, */*;q=0.8",
                 "Content-Type": "application/x-www-form-urlencoded",
             },
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with ArxivClient._open_url(request, timeout) as response:
             return response.read()
+
+    @staticmethod
+    def _open_url(request: urllib.request.Request, timeout: int):
+        if os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            return opener.open(request, timeout=timeout)
+        return urllib.request.urlopen(request, timeout=timeout)
 
     def _request(self, url: str) -> bytes:
         last_error: Exception | None = None
         for attempt in range(self.max_retries):
             try:
-                return self.http_get(url, self.timeout)
+                request = self.http_post if self.request_method == "post" else self.http_get
+                return request(url, self.timeout)
             except urllib.error.HTTPError as exc:
                 last_error = exc
-                if exc.code == 406:
+                if exc.code == 406 and self.request_method == "get":
                     try:
                         return self.http_post(url, self.timeout)
                     except Exception as post_exc:
@@ -165,7 +178,7 @@ class ArxivClient:
                         if attempt + 1 < self.max_retries:
                             self.sleep(self.delay_seconds * (attempt + 1))
                         continue
-                if exc.code == 429:
+                if exc.code in {406, 429}:
                     wait_seconds = self._rate_limit_wait(exc, attempt)
                 elif 500 <= exc.code < 600:
                     wait_seconds = self.delay_seconds * (attempt + 1)
@@ -181,6 +194,10 @@ class ArxivClient:
             raise RuntimeError(
                 f"arXiv API 请求失败: HTTP 429，已重试 {self.max_retries - 1} 次；"
                 "请稍后再运行，或减少查询频率"
+            ) from last_error
+        if isinstance(last_error, urllib.error.HTTPError) and last_error.code == 406:
+            raise RuntimeError(
+                f"arXiv API 请求失败: HTTP 406 Not Acceptable（{self.request_method.upper()} 请求重试后仍失败）"
             ) from last_error
         raise RuntimeError(f"arXiv API 请求失败: {last_error}") from last_error
 

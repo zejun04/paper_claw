@@ -18,6 +18,7 @@ analysis:
 
 arxiv:
   api_url: https://export.arxiv.org/api/query
+  request_method: post
   subject_categories:
     - cs.RO
     - cs.LG

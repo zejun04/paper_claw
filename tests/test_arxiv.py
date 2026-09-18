@@ -112,6 +112,29 @@ class ArxivTests(unittest.TestCase):
         self.assertEqual(len(papers), 1)
         self.assertEqual(calls, ["GET", "POST"])
 
+    def test_post_request_method_does_not_issue_get(self):
+        calls = []
+
+        def http_get(url, timeout):
+            calls.append("GET")
+            raise AssertionError("GET should not be used for post request mode")
+
+        def http_post(url, timeout):
+            calls.append("POST")
+            return FEED
+
+        client = ArxivClient(
+            "https://example.test/api",
+            delay_seconds=0,
+            request_method="post",
+            http_get=http_get,
+            http_post=http_post,
+            sleep=lambda _: None,
+        )
+        papers = client.search(["quadruped"], ["cs.RO"], 1, 1)
+        self.assertEqual(len(papers), 1)
+        self.assertEqual(calls, ["POST"])
+
 
 if __name__ == "__main__":
     unittest.main()
