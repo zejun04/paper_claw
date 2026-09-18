@@ -62,6 +62,7 @@ DEFAULTS: dict[str, Any] = {
     "arxiv": {
         "api_url": "https://export.arxiv.org/api/query",
         "request_method": "post",
+        "rss_url": "https://rss.arxiv.org/rss",
         "subject_categories": ["cs.RO", "cs.LG", "eess.SY", "cs.CV"],
     },
 }

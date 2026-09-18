@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import re
 import os
+import re
 import time
+import html
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -16,6 +17,11 @@ from .models import Paper
 ATOM_NS = "http://www.w3.org/2005/Atom"
 ARXIV_NS = "http://arxiv.org/schemas/atom"
 NS = {"atom": ATOM_NS, "arxiv": ARXIV_NS}
+RSS_NS = {"dc": "http://purl.org/dc/elements/1.1/"}
+
+
+class ArxivNotAcceptable(RuntimeError):
+    """The configured arXiv API endpoint rejected the request with HTTP 406."""
 
 
 def canonical_id(raw_id: str) -> str:
@@ -76,6 +82,48 @@ def parse_feed(xml_bytes: bytes) -> list[Paper]:
     return papers
 
 
+def parse_rss(xml_bytes: bytes) -> list[Paper]:
+    root = ET.fromstring(xml_bytes)
+    papers: list[Paper] = []
+    for item in root.findall("./channel/item"):
+        abs_url = _text(item.find("link"))
+        arxiv_id = canonical_id(abs_url)
+        if not arxiv_id:
+            continue
+        title = html.unescape(_text(item.find("title")))
+        description = html.unescape(_text(item.find("description")))
+        abstract_match = re.search(r"Abstract:\s*(.*)", description, flags=re.S)
+        abstract = " ".join((abstract_match.group(1) if abstract_match else description).split())
+        published_text = _text(item.find("pubDate"))
+        try:
+            published = parsedate_to_datetime(published_text)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if published.tzinfo is None:
+            published = published.replace(tzinfo=timezone.utc)
+        authors_text = _text(item.find("dc:creator", RSS_NS))
+        authors = [author.strip() for author in authors_text.split(",") if author.strip()]
+        categories = [
+            _text(node)
+            for node in item.findall("category")
+            if _text(node)
+        ]
+        papers.append(
+            Paper(
+                arxiv_id=arxiv_id,
+                title=title,
+                authors=authors,
+                abstract=abstract,
+                published=published,
+                updated=published,
+                categories=categories,
+                abs_url=abs_url,
+                pdf_url=f"https://arxiv.org/pdf/{arxiv_id}.pdf",
+            )
+        )
+    return papers
+
+
 def _date_range(days: int, now: datetime | None = None) -> str:
     current = now or datetime.now(timezone.utc)
     start = current - timedelta(days=days)
@@ -107,6 +155,7 @@ class ArxivClient:
         rate_limit_backoff_seconds: float = 60,
         rate_limit_max_backoff_seconds: float = 300,
         request_method: str = "get",
+        rss_url: str = "https://rss.arxiv.org/rss",
         http_get: Callable[[str, int], bytes] | None = None,
         http_post: Callable[[str, int], bytes] | None = None,
         sleep: Callable[[float], None] = time.sleep,
@@ -120,9 +169,11 @@ class ArxivClient:
         self.request_method = request_method.lower()
         if self.request_method not in {"get", "post"}:
             raise ValueError("request_method must be 'get' or 'post'")
+        self.rss_url = rss_url.rstrip("/")
         self.http_get = http_get or self._default_http_get
         self.http_post = http_post or self._default_http_post
         self.sleep = sleep
+        self._rss_cache: dict[str, list[Paper]] = {}
 
     @staticmethod
     def _default_http_get(url: str, timeout: int) -> bytes:
@@ -173,12 +224,19 @@ class ArxivClient:
                 if exc.code == 406 and self.request_method == "get":
                     try:
                         return self.http_post(url, self.timeout)
+                    except urllib.error.HTTPError as post_exc:
+                        if post_exc.code == 406:
+                            raise ArxivNotAcceptable(
+                                "arXiv API 返回 HTTP 406，GET 和 POST 均不可用"
+                            ) from post_exc
+                        last_error = post_exc
                     except Exception as post_exc:
                         last_error = post_exc
-                        if attempt + 1 < self.max_retries:
-                            self.sleep(self.delay_seconds * (attempt + 1))
-                        continue
-                if exc.code in {406, 429}:
+                elif exc.code == 406:
+                    raise ArxivNotAcceptable(
+                        f"arXiv API 返回 HTTP 406（{self.request_method.upper()} 请求不可用）"
+                    ) from exc
+                if exc.code == 429:
                     wait_seconds = self._rate_limit_wait(exc, attempt)
                 elif 500 <= exc.code < 600:
                     wait_seconds = self.delay_seconds * (attempt + 1)
@@ -195,11 +253,40 @@ class ArxivClient:
                 f"arXiv API 请求失败: HTTP 429，已重试 {self.max_retries - 1} 次；"
                 "请稍后再运行，或减少查询频率"
             ) from last_error
-        if isinstance(last_error, urllib.error.HTTPError) and last_error.code == 406:
-            raise RuntimeError(
-                f"arXiv API 请求失败: HTTP 406 Not Acceptable（{self.request_method.upper()} 请求重试后仍失败）"
-            ) from last_error
         raise RuntimeError(f"arXiv API 请求失败: {last_error}") from last_error
+
+    def _search_rss(
+        self,
+        keywords: list[str],
+        subject_categories: list[str],
+        days: int,
+        max_results: int,
+        now: datetime | None,
+    ) -> list[Paper]:
+        current = now or datetime.now(timezone.utc)
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=timezone.utc)
+        cutoff = current - timedelta(days=days)
+        keyword_values = [keyword.casefold() for keyword in keywords]
+        matched: dict[str, Paper] = {}
+        for index, category in enumerate(subject_categories):
+            if category not in self._rss_cache:
+                if self._rss_cache:
+                    self.sleep(self.delay_seconds)
+                rss_bytes = self.http_get(f"{self.rss_url}/{category}", self.timeout)
+                self._rss_cache[category] = parse_rss(rss_bytes)
+            for paper in self._rss_cache[category]:
+                haystack = f"{paper.title} {paper.abstract}".casefold()
+                if paper.published < cutoff or paper.published > current:
+                    continue
+                if keyword_values and not any(keyword in haystack for keyword in keyword_values):
+                    continue
+                matched.setdefault(paper.arxiv_id, paper)
+        return sorted(
+            matched.values(),
+            key=lambda paper: (paper.published, paper.arxiv_id),
+            reverse=True,
+        )[:max_results]
 
     def _rate_limit_wait(self, error: urllib.error.HTTPError, attempt: int) -> float:
         retry_after = error.headers.get("Retry-After") if error.headers else None
@@ -241,7 +328,10 @@ class ArxivClient:
                     "sortOrder": "descending",
                 }
             )
-            xml_bytes = self._request(f"{self.api_url}?{params}")
+            try:
+                xml_bytes = self._request(f"{self.api_url}?{params}")
+            except ArxivNotAcceptable:
+                return self._search_rss(keywords, subject_categories, days, max_results, now)
             page = parse_feed(xml_bytes)
             papers.extend(page)
             if len(page) < page_size:

@@ -1,8 +1,8 @@
 import unittest
-from datetime import timezone
+from datetime import datetime, timezone
 from urllib.error import HTTPError
 
-from paperclaw.arxiv import ArxivClient, build_query, canonical_id, parse_feed
+from paperclaw.arxiv import ArxivClient, build_query, canonical_id, parse_feed, parse_rss
 
 
 FEED = b'''<?xml version="1.0" encoding="UTF-8"?>
@@ -20,6 +20,21 @@ FEED = b'''<?xml version="1.0" encoding="UTF-8"?>
   </entry>
 </feed>'''
 
+RSS_FEED = b'''<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <item>
+      <title>A Quadruped Robot</title>
+      <link>https://arxiv.org/abs/2609.01234</link>
+      <description>arXiv:2609.01234v1 Announce Type: new
+Abstract: A quadruped robot abstract.</description>
+      <category>cs.RO</category>
+      <pubDate>Sun, 13 Sep 2026 01:00:00 +0000</pubDate>
+      <dc:creator>Alice, Bob</dc:creator>
+    </item>
+  </channel>
+</rss>'''
+
 
 class ArxivTests(unittest.TestCase):
     def test_canonical_id(self):
@@ -33,6 +48,13 @@ class ArxivTests(unittest.TestCase):
         self.assertEqual(papers[0].authors, ["Alice"])
         self.assertEqual(papers[0].published.tzinfo, timezone.utc)
         self.assertEqual(papers[0].pdf_url, "https://arxiv.org/pdf/2609.01234.pdf")
+
+    def test_parse_rss(self):
+        papers = parse_rss(RSS_FEED)
+        self.assertEqual(len(papers), 1)
+        self.assertEqual(papers[0].arxiv_id, "2609.01234")
+        self.assertEqual(papers[0].authors, ["Alice", "Bob"])
+        self.assertIn("quadruped robot abstract", papers[0].abstract)
 
     def test_query_contains_fields_and_date(self):
         query = build_query(["quadruped robot", "grasping"], ["cs.RO"], 3)
@@ -134,6 +156,36 @@ class ArxivTests(unittest.TestCase):
         papers = client.search(["quadruped"], ["cs.RO"], 1, 1)
         self.assertEqual(len(papers), 1)
         self.assertEqual(calls, ["POST"])
+
+    def test_406_falls_back_to_rss(self):
+        calls = []
+
+        def http_get(url, timeout):
+            calls.append(url)
+            return RSS_FEED
+
+        def http_post(url, timeout):
+            raise HTTPError(url, 406, "Not Acceptable", {}, None)
+
+        client = ArxivClient(
+            "https://example.test/api",
+            delay_seconds=0,
+            max_retries=1,
+            request_method="post",
+            rss_url="https://rss.example.test/rss",
+            http_get=http_get,
+            http_post=http_post,
+            sleep=lambda _: None,
+        )
+        papers = client.search(
+            ["quadruped"],
+            ["cs.RO"],
+            30,
+            5,
+            now=datetime(2026, 9, 18, tzinfo=timezone.utc),
+        )
+        self.assertEqual(len(papers), 1)
+        self.assertEqual(calls, ["https://rss.example.test/rss/cs.RO"])
 
 
 if __name__ == "__main__":
