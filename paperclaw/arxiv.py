@@ -106,6 +106,7 @@ class ArxivClient:
         rate_limit_backoff_seconds: float = 60,
         rate_limit_max_backoff_seconds: float = 300,
         http_get: Callable[[str, int], bytes] | None = None,
+        http_post: Callable[[str, int], bytes] | None = None,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self.api_url = api_url
@@ -115,13 +116,36 @@ class ArxivClient:
         self.rate_limit_backoff_seconds = rate_limit_backoff_seconds
         self.rate_limit_max_backoff_seconds = rate_limit_max_backoff_seconds
         self.http_get = http_get or self._default_http_get
+        self.http_post = http_post or self._default_http_post
         self.sleep = sleep
 
     @staticmethod
     def _default_http_get(url: str, timeout: int) -> bytes:
         request = urllib.request.Request(
             url,
-            headers={"User-Agent": "paper-claw/0.1 (+https://github.com/zejun04/paper_claw)"},
+            headers={
+                "User-Agent": "paper-claw/0.1 (+https://github.com/zejun04/paper_claw)",
+                "Accept": "application/atom+xml",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.read()
+
+    @staticmethod
+    def _default_http_post(url: str, timeout: int) -> bytes:
+        parsed = urllib.parse.urlsplit(url)
+        endpoint = urllib.parse.urlunsplit(
+            (parsed.scheme, parsed.netloc, parsed.path, "", "")
+        )
+        request = urllib.request.Request(
+            endpoint,
+            data=parsed.query.encode("ascii"),
+            headers={
+                "User-Agent": "paper-claw/0.1 (+https://github.com/zejun04/paper_claw)",
+                "Accept": "application/atom+xml",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            method="POST",
         )
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return response.read()
@@ -133,6 +157,14 @@ class ArxivClient:
                 return self.http_get(url, self.timeout)
             except urllib.error.HTTPError as exc:
                 last_error = exc
+                if exc.code == 406:
+                    try:
+                        return self.http_post(url, self.timeout)
+                    except Exception as post_exc:
+                        last_error = post_exc
+                        if attempt + 1 < self.max_retries:
+                            self.sleep(self.delay_seconds * (attempt + 1))
+                        continue
                 if exc.code == 429:
                     wait_seconds = self._rate_limit_wait(exc, attempt)
                 elif 500 <= exc.code < 600:

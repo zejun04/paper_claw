@@ -89,6 +89,29 @@ class ArxivTests(unittest.TestCase):
         self.assertEqual(sleeps[0], 7.0)
         self.assertEqual(len(calls), 2)
 
+    def test_not_acceptable_falls_back_to_post(self):
+        calls = []
+
+        def http_get(url, timeout):
+            calls.append("GET")
+            raise HTTPError(url, 406, "Not Acceptable", {}, None)
+
+        def http_post(url, timeout):
+            calls.append("POST")
+            return FEED
+
+        client = ArxivClient(
+            "https://example.test/api",
+            delay_seconds=0,
+            max_retries=1,
+            http_get=http_get,
+            http_post=http_post,
+            sleep=lambda _: None,
+        )
+        papers = client.search(["quadruped"], ["cs.RO"], 1, 1)
+        self.assertEqual(len(papers), 1)
+        self.assertEqual(calls, ["GET", "POST"])
+
 
 if __name__ == "__main__":
     unittest.main()
