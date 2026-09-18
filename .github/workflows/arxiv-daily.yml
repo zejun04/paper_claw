@@ -19,12 +19,12 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout main
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: main
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -37,8 +37,15 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
         run: |
-          test -n "$OPENAI_API_KEY"
-          test -n "$OPENAI_MODEL"
+          if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+            echo "::error title=Missing repository secret::OPENAI_API_KEY is not configured. Add it at Settings > Secrets and variables > Actions > Secrets."
+            exit 1
+          fi
+          if [[ -z "${OPENAI_MODEL:-}" ]]; then
+            echo "::error title=Missing repository variable::OPENAI_MODEL is not configured. Add it at Settings > Secrets and variables > Actions > Variables."
+            exit 1
+          fi
+          echo "OpenAI configuration found (model: ${OPENAI_MODEL})."
 
       - name: Fetch and analyze papers
         env:
