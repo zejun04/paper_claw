@@ -26,7 +26,7 @@ class FakeArxiv:
         ]
 
 
-def fake_classifier(papers, categories, model, threshold):
+def fake_classifier(papers, categories, model, threshold, max_output_tokens=3000):
     return {
         paper.arxiv_id: RelevanceDecision(
             True,
@@ -40,7 +40,7 @@ def fake_classifier(papers, categories, model, threshold):
     }
 
 
-def fake_analyzer(paper, decision, source_text, model):
+def fake_analyzer(paper, decision, source_text, model, max_output_tokens=3500):
     return Analysis(
         tldr="TLDR",
         institutions=[],

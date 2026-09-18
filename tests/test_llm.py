@@ -63,6 +63,7 @@ class LlmTests(unittest.TestCase):
             )
         self.assertEqual(decisions["2609.00001"].relevance, 1.0)
         self.assertTrue(client.responses.calls[0]["text"]["format"]["strict"])
+        self.assertEqual(client.responses.calls[0]["max_output_tokens"], 3000)
 
     def test_analysis_fills_missing_questions_without_inventing(self):
         client = FakeClient(

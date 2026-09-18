@@ -21,8 +21,12 @@ DEFAULTS: dict[str, Any] = {
     "analysis": {
         "language": "zh-CN",
         "relevance_threshold": 0.65,
-        "max_pdf_characters": 90000,
-        "max_analysis_characters": 50000,
+        "max_pdf_characters": 60000,
+        "max_analysis_characters": 30000,
+        "max_papers_per_run": 5,
+        "request_delay_seconds": 2,
+        "classification_max_output_tokens": 3000,
+        "analysis_max_output_tokens": 3500,
     },
     "categories": {
         "Quard-robot": {

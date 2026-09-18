@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable
@@ -67,6 +68,32 @@ def _select(
         )
         selected.extend(values[:limit])
     return selected
+
+
+def _cap_selected(
+    selected: list[tuple[Paper, RelevanceDecision]],
+    categories: dict[str, dict[str, Any]],
+    limit: int,
+) -> list[tuple[Paper, RelevanceDecision]]:
+    if limit <= 0 or len(selected) <= limit:
+        return selected
+    buckets: dict[str, list[tuple[Paper, RelevanceDecision]]] = {
+        category: [] for category in categories
+    }
+    for item in selected:
+        primary = item[1].primary_category
+        if primary in buckets:
+            buckets[primary].append(item)
+    capped: list[tuple[Paper, RelevanceDecision]] = []
+    while len(capped) < limit:
+        added = False
+        for category in categories:
+            if buckets[category] and len(capped) < limit:
+                capped.append(buckets[category].pop(0))
+                added = True
+        if not added:
+            break
+    return capped
 
 
 def run(
@@ -165,6 +192,7 @@ def run(
                 categories,
                 model,
                 analysis_config["relevance_threshold"],
+                analysis_config.get("classification_max_output_tokens", 3000),
             )
         )
     selected = _select(
@@ -174,13 +202,20 @@ def run(
         fetch_config["max_per_category"],
         analysis_config["relevance_threshold"],
     )
+    selected = _cap_selected(
+        selected,
+        categories,
+        int(analysis_config.get("max_papers_per_run", 5)),
+    )
 
     processed: dict[str, dict[str, str]] = {}
     written: list[str] = []
     errors: list[str] = []
     with tempfile.TemporaryDirectory(prefix="paperclaw-") as temp_dir:
         temp_root = Path(temp_dir)
-        for paper, decision in selected:
+        for index, (paper, decision) in enumerate(selected):
+            if index:
+                time.sleep(float(analysis_config.get("request_delay_seconds", 0)))
             path = (
                 Path(existing[paper.arxiv_id].path)
                 if paper.arxiv_id in existing
@@ -200,7 +235,13 @@ def run(
                 source_text = paper.abstract
                 analysis_error = f"PDF 获取或解析失败，已退化为摘要：{exc}"
             try:
-                analysis = analyzer(paper, decision, source_text, model)
+                analysis = analyzer(
+                    paper,
+                    decision,
+                    source_text,
+                    model,
+                    analysis_config.get("analysis_max_output_tokens", 3500),
+                )
                 if analysis_error:
                     status = "degraded"
             except Exception as exc:

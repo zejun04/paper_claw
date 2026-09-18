@@ -40,11 +40,18 @@ def _output_text(response: Any) -> str:
     raise RuntimeError("OpenAI API 未返回 output_text")
 
 
-def _create_json_response(model: str, system: str, user: str, schema: dict[str, Any]) -> Any:
+def _create_json_response(
+    model: str,
+    system: str,
+    user: str,
+    schema: dict[str, Any],
+    max_output_tokens: int,
+) -> Any:
     client = _client()
     return client.responses.create(
         model=model,
         store=False,
+        max_output_tokens=max_output_tokens,
         input=[
             {"role": "system", "content": [{"type": "input_text", "text": system}]},
             {"role": "user", "content": [{"type": "input_text", "text": user}]},
@@ -65,6 +72,7 @@ def classify_candidates(
     categories: dict[str, dict[str, Any]],
     model: str,
     threshold: float,
+    max_output_tokens: int = 3000,
 ) -> dict[str, RelevanceDecision]:
     if not papers:
         return {}
@@ -118,7 +126,9 @@ def classify_candidates(
         "primary_category 必须是给定目录之一；无关论文为 null。"
     )
     user = f"目标目录:\n{category_text}\n\n候选论文:\n{paper_text}"
-    payload = json.loads(_output_text(_create_json_response(model, system, user, schema)))
+    payload = json.loads(
+        _output_text(_create_json_response(model, system, user, schema, max_output_tokens))
+    )
     result: dict[str, RelevanceDecision] = {}
     valid_categories = set(categories)
     for item in payload.get("decisions", []):
@@ -142,7 +152,13 @@ def classify_candidates(
     return result
 
 
-def analyze_paper(paper: Paper, decision: RelevanceDecision, source_text: str, model: str) -> Analysis:
+def analyze_paper(
+    paper: Paper,
+    decision: RelevanceDecision,
+    source_text: str,
+    model: str,
+    max_output_tokens: int = 3500,
+) -> Analysis:
     schema = {
         "name": "robotics_paper_analysis",
         "schema": {
@@ -193,7 +209,9 @@ def analyze_paper(paper: Paper, decision: RelevanceDecision, source_text: str, m
         f"主分类: {decision.primary_category}\n摘要:\n{paper.abstract}\n\n论文正文（可能被截断）:\n{source_text}\n\n"
         "固定问题:\n" + "\n".join(f"{index + 1}. {question}" for index, question in enumerate(QUESTIONS))
     )
-    payload = json.loads(_output_text(_create_json_response(model, system, user, schema)))
+    payload = json.loads(
+        _output_text(_create_json_response(model, system, user, schema, max_output_tokens))
+    )
     questions = payload.get("questions", [])[:10]
     while len(questions) < 10:
         questions.append(
