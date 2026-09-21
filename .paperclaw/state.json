@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "last_success_at": "2026-09-21T05:40:25.474365+00:00",
+  "processed": {
+    "2609.22073": {
+      "path": "Quard-robot/2026/09/20260921-2609.22073-duty-factor-predicts-robust-constrained-quadrupedal-locomotion-across-ga.md",
+      "status": "complete"
+    },
+    "2609.21447": {
+      "path": "humanoid/2026/09/20260921-2609.21447-footquery-future-touchdown-guided-retrieval-from-depth-history-for-perce.md",
+      "status": "complete"
+    },
+    "2609.21726": {
+      "path": "pick/2026/09/20260921-2609.21726-zerotouch-tactile-supervised-visual-contact-estimation-for-contact-rich.md",
+      "status": "complete"
+    },
+    "2609.11059": {
+      "path": "Quard-robot/2026/09/20260921-2609.11059-gait-dependent-effects-on-quadruped-locomotion-for-load-carrying-using-p.md",
+      "status": "complete"
+    },
+    "2609.21107": {
+      "path": "humanoid/2026/09/20260921-2609.21107-learning-scene-aware-humanoid-locomotion-through-3d-clutter-from-immersi.md",
+      "status": "complete"
+    }
+  }
+}
