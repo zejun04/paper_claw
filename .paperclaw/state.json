@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "last_success_at": "2026-09-21T05:40:25.474365+00:00",
+  "last_success_at": "2026-09-22T05:36:47.773428+00:00",
   "processed": {
     "2609.22073": {
       "path": "Quard-robot/2026/09/20260921-2609.22073-duty-factor-predicts-robust-constrained-quadrupedal-locomotion-across-ga.md",
@@ -21,6 +21,26 @@
     "2609.21107": {
       "path": "humanoid/2026/09/20260921-2609.21107-learning-scene-aware-humanoid-locomotion-through-3d-clutter-from-immersi.md",
       "status": "complete"
+    },
+    "2609.24145": {
+      "path": "Quard-robot/2026/09/20260922-2609.24145-mimicagent-quadruped-skills-via-prompt-to-trajectory-generation.md",
+      "status": "pending"
+    },
+    "2609.24552": {
+      "path": "humanoid/2026/09/20260922-2609.24552-smoothness-as-a-constraint-for-stable-humanoid-locomotion.md",
+      "status": "complete"
+    },
+    "2609.24896": {
+      "path": "pick/2026/09/20260922-2609.24896-steerable-and-reactive-grasping-through-modular-design-with-a-three-poin.md",
+      "status": "pending"
+    },
+    "2509.17582": {
+      "path": "Quard-robot/2026/09/20260922-2509.17582-gecco-a-generalist-contact-conditioned-policy-for-loco-manipulation-skil.md",
+      "status": "complete"
+    },
+    "2609.24742": {
+      "path": "humanoid/2026/09/20260922-2609.24742-llm-based-conversational-ai-knowledge-assistant-for-mybuddy-humanoid-rob.md",
+      "status": "pending"
     }
   }
 }
